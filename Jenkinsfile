@@ -1,31 +1,36 @@
 pipeline {
-    agent { label 'sa-javaslave' }
-
+    agent any
     tools {
-        // Install the Maven version configured as "M3" and add it to the path.
-        maven "slave_maven"
+        maven 'Maven_3.0.5'
     }
-
     stages {
-        stage('SCM Checkout') {
+        stage('Clone the repo from github') {
             steps {
-                echo 'Checkout Src from github repo'
-		git 'https://github.com/LoksaiETA/Java-mvn-app2.git'
+                git branch: 'master', credentialsId: 'github_credentials', url: 'https://github.com/madinenitejaswini/java-mvn-app.git'
             }
         }
-        stage('Maven Build') {
+        stage('Build the code') {
             steps {
-                echo 'Perform Maven Build'
-                // Run Maven on a Unix agent.
-                sh "mvn -Dmaven.test.failure.ignore=true clean package"
+                sh 'mvn clean install'
             }
         }
-        stage('Deploy to QA Server') {
+        stage('Build Docker Image') {
             steps {
-		script {
-		sshPublisher(publishers: [sshPublisherDesc(configName: 'QA_Server', transfers: [sshTransfer(cleanRemote: false, excludes: '', execCommand: '', execTimeout: 120000, flatten: false, makeEmptyDirs: false, noDefaultExcludes: false, patternSeparator: '[, ]+', remoteDirectory: '.', remoteDirectorySDF: false, removePrefix: 'target/', sourceFiles: 'target/mvn-hello-world.war')], usePromotionTimestamp: false, useWorkspaceInPromotion: false, verbose: false)])
-		}
+                sh '''
+                docker build . -t web-application:$BUILD_NUMBER
+                docker tag web-application:$BUILD_NUMBER madinenitejaswini/mt:$BUILD_NUMBER
+                '''  
+            }
         }
-	}
+        stage('Push Docker Image') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'dockerhub_credentials', passwordVariable: 'DOCKERHUB_PASSWORD', usernameVariable: 'DOCKERHUB_USERNAME')]) {
+                    sh '''
+                    docker login -u $DOCKERHUB_USERNAME -p $DOCKERHUB_PASSWORD
+                    docker push madinenitejaswini/mt:$BUILD_NUMBER
+                    '''
+                }
+            }
+        }
     }
 }
