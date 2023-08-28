@@ -1,36 +1,32 @@
 pipeline {
-    agent any
+    agent { label 'sa-javaslave' }
+
     tools {
-        maven 'Maven_3.0.5'
+        // Install the Maven version configured as "M3" and add it to the path.
+        maven "slave_maven"
     }
+
     stages {
-        stage('Clone the repo from github') {
+        stage('SCM Checkout') {
             steps {
-                git branch: 'master', credentialsId: 'github_credentials', url: 'https://github.com/madinenitejaswini/java-mvn-app.git'
+                echo 'Checkout Src from github repo'
+		git 'https://github.com/LoksaiETA/Java-mvn-app2.git'
             }
         }
-        stage('Build the code') {
+        stage('Maven Build') {
             steps {
-                sh 'mvn clean install'
+                echo 'Perform Maven Build'
+                // Run Maven on a Unix agent.
+                sh "mvn -Dmaven.test.failure.ignore=true clean package"
             }
         }
-        stage('Build Docker Image') {
+        stage('Deploy to QA Server') {
             steps {
-                sh '''
-                docker build . -t web-application:$BUILD_NUMBER
-                docker tag web-application:$BUILD_NUMBER madinenitejaswini/mt:$BUILD_NUMBER
-                '''  
-            }
+		script {
+		sshPublisher(publishers: [sshPublisherDesc(configName: 'QA_Server', transfers: [sshTransfer(cleanRemote: false, excludes: '', execCommand: '', execTimeout: 120000, flatten: false, makeEmptyDirs: false, noDefaultExcludes: false, patternSeparator: '[, ]+', remoteDirectory: '.', remoteDirectorySDF: false, removePrefix: 'target/', sourceFiles: 'target/mvn-hello-world.war')], usePromotionTimestamp: false, useWorkspaceInPromotion: false, verbose: false)])
+		}
         }
-        stage('Push Docker Image') {
-            steps {
-                withCredentials([usernamePassword(credentialsId: 'dockerhub_credentials', passwordVariable: 'DOCKERHUB_PASSWORD', usernameVariable: 'DOCKERHUB_USERNAME')]) {
-                    sh '''
-                    docker login -u $DOCKERHUB_USERNAME -p $DOCKERHUB_PASSWORD
-                    docker push madinenitejaswini/mt:$BUILD_NUMBER
-                    '''
-                }
-            }
-        }
+	}
     }
 }
+
