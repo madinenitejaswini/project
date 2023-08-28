@@ -1,6 +1,3 @@
-FROM tomcat:9
-RUN apt update
-WORKDIR /usr/local/tomcat
-ADD target/*.war webapps/
+FROM tomcat:8.0
+COPY ./target/mvn-hello-world.war /usr/local/tomcat/webapps
 EXPOSE 8080
-CMD ["catalina.sh", "run"]
