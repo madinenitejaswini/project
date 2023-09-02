@@ -1,4 +1,4 @@
-FROM tomcat:8.0
+FROM tomcat:9
 RUN apt update
 WORKDIR /usr/local/tomcat
 ADD target/*.war webapps/
