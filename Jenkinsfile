@@ -1,32 +1,58 @@
 pipeline {
-    agent { label 'sa-javaslave' }
-
+    agent any
     tools {
-        // Install the Maven version configured as "M3" and add it to the path.
-        maven "slave_maven"
+        maven 'maven-3.9.4'
     }
-
     stages {
-        stage('SCM Checkout') {
+        stage('Clone the repo from github') {
             steps {
-                echo 'Checkout Src from github repo'
-		git 'https://github.com/LoksaiETA/Java-mvn-app2.git'
+                git branch: 'master', credentialsId: 'github-credentials', url: 'https://github.com/madinenitejaswini/webapp.git'
             }
         }
-        stage('Maven Build') {
+        stage('Build the code') {
             steps {
-                echo 'Perform Maven Build'
-                // Run Maven on a Unix agent.
-                sh "mvn -Dmaven.test.failure.ignore=true clean package"
+                sh 'mvn clean install'
             }
         }
-        stage('Deploy to QA Server') {
+        stage('Static code analysis using Sonarqube') {
             steps {
-		script {
-		sshPublisher(publishers: [sshPublisherDesc(configName: 'QA_Server', transfers: [sshTransfer(cleanRemote: false, excludes: '', execCommand: '', execTimeout: 120000, flatten: false, makeEmptyDirs: false, noDefaultExcludes: false, patternSeparator: '[, ]+', remoteDirectory: '.', remoteDirectorySDF: false, removePrefix: 'target/', sourceFiles: 'target/mvn-hello-world.war')], usePromotionTimestamp: false, useWorkspaceInPromotion: false, verbose: false)])
-		}
+                withSonarQubeEnv('sonar-9.9.1') {
+                sh 'mvn sonar:sonar'
+                }
+            }            
         }
-	}
+        stage('Build Docker Image and tag it to aws ecr') {
+            steps {
+                sh '''
+                docker build . -t webapp:$BUILD_NUMBER
+                docker tag webapp:$BUILD_NUMBER 361661913055.dkr.ecr.ap-south-1.amazonaws.com/webapp:$BUILD_NUMBER
+                '''  
+            }
+        }
+	stage('Push Docker Image to AWS ECR') {
+            steps {
+                 // configure AWS credentials
+                withAWS(credentials: 'aws-credentials', region: 'ap-south-1') {
+                    sh '''
+                    aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin 361661913055.dkr.ecr.ap-south-1.amazonaws.com
+                    docker push 361661913055.dkr.ecr.ap-south-1.amazonaws.com/webapp:$BUILD_NUMBER
+                    '''
+                }
+            }
+        }
+        stage('Deployto AWS EKS') {
+            steps {
+               withAWS(credentials: 'aws-credentials', region: 'ap-south-1') {
+
+                   // Connect to the EKS cluster
+                   // Apply yaml file to eks cluster
+                    sh '''
+                     aws eks update-kubeconfig --name dev-cluster --region ap-south-1 
+                     kubectl apply -f .
+                     kubectl set image deployment/webapp webapp=361661913055.dkr.ecr.ap-south-1.amazonaws.com/webapp:$BUILD_NUMBER
+                    '''
+                }
+            }
+        }
     }
 }
-
